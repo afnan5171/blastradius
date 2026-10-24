@@ -4,30 +4,68 @@ from .db import get_db
 from .auth import current_user
 from .models import User
 from .routes import profile, owned
-from .graph import build_graph, calculate_shortest_attack_paths, calculate_blast_radius_score, calculate_account_risk_scores, risk_level
-router=APIRouter()
-@router.post('/simulate/{account_id}')
-def simulate(account_id: str, db: Session=Depends(get_db), user: User=Depends(current_user)):
-    owned(db,user,account_id)
-    graph=build_graph(*profile(db,user))
-    paths=calculate_shortest_attack_paths(graph,account_id)
-    return {'source_account_id':account_id,'directly_reachable':[p['target_account_id'] for p in paths if p['direct']],
-            'indirectly_reachable':[p['target_account_id'] for p in paths if not p['direct']],
-            'paths':paths,'affected_count':len(paths), 'recommendations':generate_recommendations(graph,account_id), 'score':calculate_blast_radius_score(graph,account_id), 'level':risk_level(calculate_blast_radius_score(graph,account_id)),
-            'high_value_count':sum(graph.nodes[p['target_account_id']]['account'].importance in {'High','Critical'} for p in paths)}
+from .graph import (
+    build_graph,
+    calculate_shortest_attack_paths,
+    calculate_blast_radius_score,
+    calculate_account_risk_scores,
+    risk_level,
+)
 
-@router.get('/risk-scores')
-def risk_scores(db: Session=Depends(get_db), user: User=Depends(current_user)):
-    return calculate_account_risk_scores(build_graph(*profile(db,user)))
+router = APIRouter()
 
-from .graph import generate_recommendations, find_security_chokepoints, find_circular_dependencies
-@router.get('/recommendations/{account_id}')
-def recommendations(account_id: str, db: Session=Depends(get_db), user: User=Depends(current_user)):
-    owned(db,user,account_id)
-    return generate_recommendations(build_graph(*profile(db,user)),account_id)
-@router.get('/security-chokepoints')
-def chokepoints(db: Session=Depends(get_db), user: User=Depends(current_user)):
-    return find_security_chokepoints(build_graph(*profile(db,user)))
-@router.get('/circular-dependencies')
-def circles(db: Session=Depends(get_db), user: User=Depends(current_user)):
-    return find_circular_dependencies(build_graph(*profile(db,user)))
+
+@router.post("/simulate/{account_id}")
+def simulate(
+    account_id: str, db: Session = Depends(get_db), user: User = Depends(current_user)
+):
+    owned(db, user, account_id)
+    graph = build_graph(*profile(db, user))
+    paths = calculate_shortest_attack_paths(graph, account_id)
+    return {
+        "source_account_id": account_id,
+        "directly_reachable": [p["target_account_id"] for p in paths if p["direct"]],
+        "indirectly_reachable": [
+            p["target_account_id"] for p in paths if not p["direct"]
+        ],
+        "paths": paths,
+        "affected_count": len(paths),
+        "recommendations": generate_recommendations(graph, account_id),
+        "score": calculate_blast_radius_score(graph, account_id),
+        "level": risk_level(calculate_blast_radius_score(graph, account_id)),
+        "high_value_count": sum(
+            graph.nodes[p["target_account_id"]]["account"].importance
+            in {"High", "Critical"}
+            for p in paths
+        ),
+    }
+
+
+@router.get("/risk-scores")
+def risk_scores(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    return calculate_account_risk_scores(build_graph(*profile(db, user)))
+
+
+from .graph import (
+    generate_recommendations,
+    find_security_chokepoints,
+    find_circular_dependencies,
+)
+
+
+@router.get("/recommendations/{account_id}")
+def recommendations(
+    account_id: str, db: Session = Depends(get_db), user: User = Depends(current_user)
+):
+    owned(db, user, account_id)
+    return generate_recommendations(build_graph(*profile(db, user)), account_id)
+
+
+@router.get("/security-chokepoints")
+def chokepoints(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    return find_security_chokepoints(build_graph(*profile(db, user)))
+
+
+@router.get("/circular-dependencies")
+def circles(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    return find_circular_dependencies(build_graph(*profile(db, user)))

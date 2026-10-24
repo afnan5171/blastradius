@@ -1,49 +1,168 @@
 def add(client, name="Gmail"):
-    result=client.post("/accounts",json={"service_name":name,"category":"Email"})
-    assert result.status_code==201
+    result = client.post("/accounts", json={"service_name": name, "category": "Email"})
+    assert result.status_code == 201
     return result.json()
+
+
 def test_crud(client):
-    a=add(client); b=add(client,"Amazon")
-    r=client.post("/relationships",json={"source_account_id":a["id"],"target_account_id":b["id"],"relationship_type":"PASSWORD_RESET"})
-    assert r.status_code==201 and r.json()["risk_weight"]==10
-    assert client.post("/relationships",json={k:v for k,v in r.json().items() if k!='id'}).status_code==409
-    assert client.put('/accounts/'+a['id'],json={"service_name":"Updated","has_mfa":True}).json()['has_mfa']
-    assert client.delete('/accounts/'+a['id']).status_code==204
-    assert client.get('/relationships').json()==[]
-    assert len(client.get('/accounts').json())==1
+    a = add(client)
+    b = add(client, "Amazon")
+    r = client.post(
+        "/relationships",
+        json={
+            "source_account_id": a["id"],
+            "target_account_id": b["id"],
+            "relationship_type": "PASSWORD_RESET",
+        },
+    )
+    assert r.status_code == 201 and r.json()["risk_weight"] == 10
+    assert (
+        client.post(
+            "/relationships", json={k: v for k, v in r.json().items() if k != "id"}
+        ).status_code
+        == 409
+    )
+    assert client.put(
+        "/accounts/" + a["id"], json={"service_name": "Updated", "has_mfa": True}
+    ).json()["has_mfa"]
+    assert client.delete("/accounts/" + a["id"]).status_code == 204
+    assert client.get("/relationships").json() == []
+    assert len(client.get("/accounts").json()) == 1
+
+
 def test_ownership(client):
-    a=add(client)
+    a = add(client)
     client.cookies.clear()
-    assert client.get('/accounts').status_code==401
-    client.post('/auth/demo')
-    b=add(client,'Other')
-    assert client.get('/accounts').json()[0]['id']==b['id']
-    assert client.put('/accounts/'+a['id'],json={"service_name":"Attack"}).status_code==404
-    assert client.post('/relationships',json={"source_account_id":b['id'],"target_account_id":a['id'],"relationship_type":"OTHER"}).status_code==404
+    assert client.get("/accounts").status_code == 401
+    client.post("/auth/demo")
+    b = add(client, "Other")
+    assert client.get("/accounts").json()[0]["id"] == b["id"]
+    assert (
+        client.put("/accounts/" + a["id"], json={"service_name": "Attack"}).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            "/relationships",
+            json={
+                "source_account_id": b["id"],
+                "target_account_id": a["id"],
+                "relationship_type": "OTHER",
+            },
+        ).status_code
+        == 404
+    )
+
+
 def test_validation(client):
-    assert client.post('/accounts',json={"service_name":"  "}).status_code==422
-    assert client.post('/accounts',json={"service_name":"Test","password":"secret"}).status_code==422
-    a=add(client)
-    assert client.post('/relationships',json={"source_account_id":a['id'],"target_account_id":a['id'],"relationship_type":"OTHER"}).status_code==422
-    assert client.post('/auth/demo',headers={"Sec-Fetch-Site":"cross-site"}).status_code==403
+    assert client.post("/accounts", json={"service_name": "  "}).status_code == 422
+    assert (
+        client.post(
+            "/accounts", json={"service_name": "Test", "password": "secret"}
+        ).status_code
+        == 422
+    )
+    a = add(client)
+    assert (
+        client.post(
+            "/relationships",
+            json={
+                "source_account_id": a["id"],
+                "target_account_id": a["id"],
+                "relationship_type": "OTHER",
+            },
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post("/auth/demo", headers={"Sec-Fetch-Site": "cross-site"}).status_code
+        == 403
+    )
+
+
 def test_simulation(client):
-    a=add(client); b=add(client,'PayPal')
-    client.post('/relationships',json={"source_account_id":a['id'],"target_account_id":b['id'],"relationship_type":"PASSWORD_RESET"})
-    result=client.post('/simulate/'+a['id']).json()
-    assert result['affected_count']==1
-    assert result['paths'][0]['relationship_types']==['PASSWORD_RESET']
-    client.cookies.clear();client.post('/auth/demo')
-    assert client.post('/simulate/'+a['id']).status_code==404
+    a = add(client)
+    b = add(client, "PayPal")
+    client.post(
+        "/relationships",
+        json={
+            "source_account_id": a["id"],
+            "target_account_id": b["id"],
+            "relationship_type": "PASSWORD_RESET",
+        },
+    )
+    result = client.post("/simulate/" + a["id"]).json()
+    assert result["affected_count"] == 1
+    assert result["paths"][0]["relationship_types"] == ["PASSWORD_RESET"]
+    client.cookies.clear()
+    client.post("/auth/demo")
+    assert client.post("/simulate/" + a["id"]).status_code == 404
+
+
 def test_demo_and_analysis(client):
-    assert client.post('/demo/load').json()['accounts']==10
-    assert client.post('/demo/load').status_code==409
-    accounts=client.get('/accounts').json()
-    assert len(accounts)==10
-    gmail=next(a for a in accounts if a['service_name']=='Gmail')
-    result=client.post('/simulate/'+gmail['id']).json()
-    assert result['affected_count']==9 and len(result['recommendations'])==3
-    assert result['score']>0
-    assert client.get('/security-chokepoints').json()[0]['dependent_accounts']==9
-    assert len(client.get('/circular-dependencies').json())==1
-    assert len(client.get('/risk-scores').json())==10
-    assert client.get('/recommendations/'+gmail['id']).json()==result['recommendations']
+    assert client.post("/demo/load").json()["accounts"] == 10
+    assert client.post("/demo/load").status_code == 409
+    accounts = client.get("/accounts").json()
+    assert len(accounts) == 10
+    gmail = next(a for a in accounts if a["service_name"] == "Gmail")
+    result = client.post("/simulate/" + gmail["id"]).json()
+    assert result["affected_count"] == 9 and len(result["recommendations"]) == 3
+    assert result["score"] > 0
+    assert client.get("/security-chokepoints").json()[0]["dependent_accounts"] == 9
+    assert len(client.get("/circular-dependencies").json()) == 1
+    assert len(client.get("/risk-scores").json()) == 10
+    assert (
+        client.get("/recommendations/" + gmail["id"]).json()
+        == result["recommendations"]
+    )
+
+
+def test_relationship_delete_and_ownership(client):
+    a = add(client)
+    b = add(client, "Bank")
+    payload = {
+        "source_account_id": a["id"],
+        "target_account_id": b["id"],
+        "relationship_type": "OTHER",
+        "risk_weight": 3,
+    }
+    relation = client.post("/relationships", json=payload).json()
+    session = client.cookies.get("br_session")
+    client.cookies.clear()
+    client.post("/auth/demo")
+    assert client.delete("/relationships/" + relation["id"]).status_code == 404
+    assert client.delete("/accounts/" + a["id"]).status_code == 404
+    client.cookies.clear()
+    client.cookies.set("br_session", session)
+    assert client.delete("/relationships/" + relation["id"]).status_code == 204
+    assert client.get("/relationships").json() == []
+    assert len(client.get("/accounts").json()) == 2
+
+
+def test_session_cookie_and_input_limits(client):
+    assert client.get("/accounts").headers["cache-control"] == "no-store"
+    assert client.post("/accounts", json={"service_name": "x" * 101}).status_code == 422
+    assert (
+        client.post(
+            "/accounts", json={"service_name": "x", "importance": "Unknown"}
+        ).status_code
+        == 422
+    )
+    a = add(client)
+    b = add(client, "Target")
+    assert (
+        client.post(
+            "/relationships",
+            json={
+                "source_account_id": a["id"],
+                "target_account_id": b["id"],
+                "relationship_type": "OTHER",
+                "risk_weight": 11,
+            },
+        ).status_code
+        == 422
+    )
+    client.cookies.clear()
+    response = client.post("/auth/demo")
+    assert "HttpOnly" in response.headers["set-cookie"]
+    assert "SameSite=strict" in response.headers["set-cookie"]

@@ -1,47 +1,1099 @@
-'use client';
-import {useCallback,useEffect,useState} from 'react';
-import {Activity,ArrowRight,ArrowUpRight,Check,ChevronRight, CircleHelp,GitBranch, LayoutDashboard,Link2,LockKeyhole,Plus,Radio,RotateCcw,Search,Shield,ShieldCheck,ShieldAlert,Sparkles,Trash2,TriangleAlert,UserRound,Waypoints,X} from 'lucide-react';
-import IdentityMap from '@/components/IdentityMap';
-import {AccountForm,ConnectionForm,Modal} from '@/components/Forms';
-import {api,Account,Connection,Simulation,Risk,Choke,Recommendation,label} from '@/lib/types';
-type View='overview'|'accounts'|'recommendations';
-export default function Page(){
- const [accounts,setAccounts]=useState<Account[]>([]),[connections,setConnections]=useState<Connection[]>([]),[risks,setRisks]=useState<Risk[]>([]),[chokes,setChokes]=useState<Choke[]>([]),[cycles,setCycles]=useState<string[][]>([]);
- const [selected,setSelected]=useState<string|null>(null),[simulation,setSimulation]=useState<Simulation|null>(null),[recs,setRecs]=useState<Recommendation[]>([]),[view,setView]=useState<View>('overview');
- const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[query,setQuery]=useState('');
- const [modal,setModal]=useState<'add'|'edit'|'connect'|'help'|null>(null),[deleting,setDeleting]=useState<{kind:'accounts'|'relationships';id:string;name:string}|null>(null);
- const refresh=useCallback(async()=>{const [a,c,r,h,l]=await Promise.all([api<Account[]>('/accounts'),api<Connection[]>('/relationships'),api<Risk[]>('/risk-scores'),api<Choke[]>('/security-chokepoints'),api<string[][]>('/circular-dependencies')]);setAccounts(a);setConnections(c);setRisks(r);setChokes(h);setCycles(l);setSelected(prev=>a.some(x=>x.id===prev)?prev:r[0]?.account_id||a[0]?.id||null);setSimulation(null)},[]);
- useEffect(()=>{let active=true;(async()=>{try{await api('/auth/me')}catch{await api('/auth/demo','POST')}if(active)await refresh()})().catch(e=>setError(e.message)).finally(()=>setLoading(false));return()=>{active=false}},[refresh]);
- useEffect(()=>{let active=true;setRecs([]);if(selected)api<Recommendation[]>(`/recommendations/${selected}`).then(r=>{if(active)setRecs(r)}).catch(e=>{if(active)setError(e.message)});return()=>{active=false}},[selected,accounts]);
- const account=accounts.find(a=>a.id===selected),risk=risks.find(r=>r.account_id===selected),highest=accounts.find(a=>a.id===risks[0]?.account_id);
- const name=(id:string)=>accounts.find(a=>a.id===id)?.service_name||'Account';
- const select=(id:string)=>{setSelected(id);setSimulation(null)};
- async function action(fn:()=>Promise<unknown>){setBusy(true);setError('');try{await fn()}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
- const saved=()=>{setModal(null);void action(async()=>{await refresh();setNotice('Your map has been saved.')})};
- async function simulate(){if(!selected)return;await action(async()=>{setSimulation(await api<Simulation>(`/simulate/${selected}`,'POST'));setNotice('Simulation complete. Potential attack paths are highlighted.')})}
- const searchResults=accounts.filter(a=>(a.service_name+' '+a.category+' '+a.email_or_username).toLowerCase().includes(query.toLowerCase()));
- const nav=[{id:'overview' as View,icon:LayoutDashboard,text:'Overview'},{id:'accounts' as View,icon:Waypoints,text:'My accounts'},{id:'recommendations' as View,icon:ShieldCheck,text:'Security actions'}];
- return <div className="app-shell"><aside className="sidebar"><a href="#" className="brand" onClick={e=>{e.preventDefault();setView('overview')}}><span className="brand-mark"><Radio size={23}/></span>BlastRadius<span className="beta">BETA</span></a><div className="workspace"><div className="avatar">A</div><div><strong>Personal workspace</strong><small>Private demo session</small></div><ChevronRight size={14}/></div><p className="nav-label">WORKSPACE</p><nav>{nav.map(n=><button key={n.id} onClick={()=>setView(n.id)} className={view===n.id?'active':''}><n.icon size={18}/>{n.text}{n.id==='accounts'&&<span>{accounts.length}</span>}</button>)}</nav><div className="sidebar-bottom"><div className="privacy-box"><LockKeyhole size={18}/><strong>Your privacy comes first</strong><p>BlastRadius never asks for or stores your account passwords.</p></div><button className="help-link" onClick={()=>setModal('help')}><CircleHelp size={17}/> How BlastRadius works <ArrowUpRight size={14}/></button><div className="profile"><div className="avatar"><UserRound size={16}/></div><div><strong>Your demo profile</strong><small>Saved in this browser session</small></div><span className="online-dot"/></div></div></aside>
- <div className="main-shell"><header className="topbar"><span>Workspace <ChevronRight size={13}/> <strong>{nav.find(n=>n.id===view)?.text}</strong></span><div className="topbar-right"><span className="private-label"><LockKeyhole size={12}/> Private by design</span><div className="avatar">A</div></div></header>
- <main className="content"><div className="heading"><div><div className="eyebrow"><span/> KNOW YOUR EXPOSURE</div><h1>{view==='overview'?'Your digital life, connected.':view==='accounts'?'Every account. One clear view.':'Small changes. Stronger security.'}</h1><p>{view==='overview'?'See how your accounts connect. Understand what’s at risk. Protect what matters.':view==='accounts'?'Build your map with the accounts you use and the connections between them.':'Focus on the changes that can make the biggest difference.'}</p></div><button className="primary" onClick={()=>setModal('add')} disabled={loading||busy}><Plus size={17}/> Add account</button></div>
- {error&&<div className="error-banner" role="alert"><TriangleAlert size={17}/>{error}<button onClick={()=>{setError('');void action(refresh)}}>Retry</button><button aria-label="Dismiss error" onClick={()=>setError('')}><X size={15}/></button></div>}
- {notice&&<div className="notice" role="status"><Check size={15}/>{notice}<button aria-label="Dismiss notification" onClick={()=>setNotice('')}><X size={14}/></button></div>}
- {loading?<div className="loading"><Radio className="pulse" size={32}/> Preparing your private workspace…</div>:<>
- <section className="stats" aria-label="Account summary"><Stat title="Total accounts" value={accounts.length} icon={<Waypoints size={18}/>} detail={`${connections.length} connections mapped`}/><Stat title="Critical accounts" value={accounts.filter(a=>a.importance==='Critical').length} icon={<Shield size={18}/>} detail="Your most important accounts"/><Stat title="Without MFA" value={accounts.filter(a=>!a.has_mfa).length} icon={<ShieldAlert size={18}/>} detail="Could use another layer of protection" accent/><Stat title="Highest blast radius" value={highest?.service_name||'—'} icon={<Activity size={18}/>} detail={highest?`${risks[0]?.score} / 100 · ${risks[0]?.level} exposure`:'Add accounts to see your exposure'}/></section>
- {!accounts.length?<section className="empty-card"><div className="empty-icon"><Waypoints size={40}/></div><span className="eyebrow">YOUR MAP STARTS HERE</span><h2>One account can open many doors.</h2><p>Connect your accounts to find out which ones matter most.<br/>Try a fictional 10-account profile, or build your own.</p><div className="button-row"><button className="primary" disabled={busy} onClick={()=>void action(async()=>{await api('/demo/load','POST');await refresh();setNotice('Demo loaded: 10 accounts and 12 connections. Select Gmail to simulate a compromise.')})}><Sparkles size={17}/>{busy?'Loading…':'Explore demo profile'}</button><button className="secondary" onClick={()=>setModal('add')}>Add my first account <ArrowRight size={15}/></button></div><small>No scans. No passwords. Just the connections you choose to add.</small></section>:<>
- {view==='overview'&&<><section className="map-layout"><div className="map-card"><div className="card-heading"><div><h2><Waypoints size={18}/> Your account map <span className="count-chip">{accounts.length} accounts</span></h2><p>{simulation?`Showing potential exposure from ${name(simulation.source_account_id)}`:'A clear picture of your digital dependencies'}</p></div><button className="secondary compact" disabled={busy||accounts.length<2} onClick={()=>setModal('connect')}><Link2 size={14}/> Add connection</button></div><div className="map-toolbar"><span className={simulation?'simulation-pill':'live-pill'}><span/>{simulation?'Simulation active':'Live account map'}</span>{simulation?<button className="text-button" onClick={()=>setSimulation(null)}><RotateCcw size={12}/> Reset view</button>:<span className="map-hint">Select an account to explore its impact</span>}</div><div className="graph"><IdentityMap accounts={accounts} connections={connections} selected={selected} onSelect={select} simulation={simulation}/></div><div className="map-legend">{simulation?<><span><i className="dot-red"/>Starting account</span><span><i className="dot-orange"/>Potentially affected</span><span><i/>Unaffected</span></>:<><span><i className="dot-green"/>MFA or passkey enabled</span><span><i className="dot-orange"/>No MFA</span><span><ArrowRight size={12}/> Direction of access</span></>}<span className="drag-hint">Drag to move · Scroll to zoom</span></div></div>
- <aside className="detail-card">{account&&<><div className="detail-top"><span className="section-kicker">ACCOUNT DETAILS</span><button className="text-button" onClick={()=>setModal('edit')}>Edit</button></div><div className="account-title"><div className={'service-icon large c-'+account.category.replaceAll(' ','-').toLowerCase()}>{account.service_name[0]}</div><div><h2>{account.service_name}</h2><p>{account.email_or_username||account.category}</p></div></div><span className="category-chip">{account.category}</span><dl className="detail-list"><div><dt>Importance</dt><dd className={account.importance==='Critical'?'orange-text':''}>{account.importance}</dd></div><div><dt>Two-factor authentication</dt><dd className={account.has_mfa?'green-text':'orange-text'}>{account.has_mfa?'Enabled':'Not enabled'}</dd></div><div><dt>Passkey</dt><dd className={account.has_passkey?'green-text':''}>{account.has_passkey?'Enabled':'Not enabled'}</dd></div><div><dt>Dependent accounts</dt><dd>{risk?.dependent_accounts||0} accounts</dd></div></dl><div className="score-box"><div><span>Blast Radius Score</span><span className={'risk-badge '+(risk?.level||'Low').toLowerCase()}>{risk?.level||'Low'}</span></div><strong>{risk?.score||0}<small>/ 100</small></strong><div className="score-track"><i style={{width:`${risk?.score||0}%`}}/></div><p>Potential exposure if this account is compromised.</p></div><button className="simulate" disabled={busy} onClick={simulate}><Radio size={17}/>{busy?'Calculating…':'Simulate Compromise'}<ArrowRight size={15}/></button><p className="safe-note"><ShieldCheck size={12}/> A safe simulation. No accounts are accessed.</p>{(account.recovery_email||account.recovery_phone)&&<p className="recovery-note">Recovery: {account.recovery_email} {account.recovery_phone}</p>}<button className="delete-link" onClick={()=>setDeleting({kind:'accounts',id:account.id,name:account.service_name})}><Trash2 size={12}/> Remove account</button></>}</aside></section>
- {simulation&&<section className="simulation-results"><div className="card-heading"><div><h2><Radio size={18}/> If {name(simulation.source_account_id)} is compromised</h2><p>{simulation.affected_count} other accounts potentially affected · {simulation.high_value_count} high-value accounts · {simulation.directly_reachable.length} direct, {simulation.indirectly_reachable.length} indirect</p></div><span className={'risk-badge '+simulation.level.toLowerCase()}>{simulation.score}/100 · {simulation.level}</span></div><p className="results-note">These are possible paths based on your map, not confirmed vulnerabilities. MFA and passkeys lower risk but do not erase recovery paths.</p><div className="attack-paths">{simulation.paths.length?simulation.paths.map(p=><div className="attack-path" key={p.target_account_id}><div><strong>{name(p.target_account_id)}</strong><span className="category-chip">{p.direct?'Direct access':'Indirect access'}</span></div><p>{p.account_ids.map((id,i)=><span key={id}>{i>0&&<ArrowRight size={12}/>} {name(id)} </span>)}</p><small>{p.relationship_types.map(label).join(' → ')}</small></div>):<p>No other accounts are reachable from this account in your current map.</p>}</div></section>}
- <section className="lower-grid"><div className="risk-card"><div className="card-heading"><div><h2>Your highest risk accounts</h2><p>The accounts with the greatest potential impact</p></div><span className="section-kicker">EXPOSURE</span></div>{risks.slice(0,4).map((r,i)=><button className="risk-row" key={r.account_id} onClick={()=>select(r.account_id)}><span className="rank">0{i+1}</span><div className="service-icon small">{name(r.account_id)[0]}</div><div className="risk-name"><strong>{name(r.account_id)}</strong><small>{r.dependent_accounts} dependent accounts</small></div><span className="mini-track"><i style={{width:`${r.score}%`}}/></span><strong>{r.score}</strong><span className={'risk-badge '+r.level.toLowerCase()}>{r.level}</span><ChevronRight size={14}/></button>)}</div><div className="insight-card"><div className="insight-icon"><GitBranch size={22}/></div><span className="section-kicker">YOUR SECURITY CHOKE POINT</span><h2>{chokes[0]?`${name(chokes[0].account_id)} holds a lot of keys.`:'Every connection tells a story.'}</h2><p>{chokes[0]?<>Your {name(chokes[0].account_id)} account influences <strong>{chokes[0].dependent_accounts} other accounts.</strong> Protecting it is one of the most useful places to start.</>:'Keep adding connections to find the accounts that influence the rest of your digital life.'}</p><button className="text-button" onClick={()=>{if(chokes[0])select(chokes[0].account_id);setView('recommendations')}}>See recommended actions <ArrowRight size={14}/></button></div></section></>}
- {view==='accounts'&&<><section className="table-card"><div className="card-heading"><div><h2>Your accounts</h2><p>Only metadata. Never passwords.</p></div><label className="search"><Search size={15}/><input aria-label="Search accounts" placeholder="Search accounts…" value={query} onChange={e=>setQuery(e.target.value)}/></label></div><div className="table-scroll"><table><thead><tr><th>Account</th><th>Category</th><th>Importance</th><th>MFA</th><th>Passkey</th><th>Actions</th></tr></thead><tbody>{searchResults.map(a=><tr key={a.id}><td><strong>{a.service_name}</strong><small>{a.email_or_username}</small></td><td>{a.category}</td><td>{a.importance}</td><td>{a.has_mfa?'Enabled':'Not enabled'}</td><td>{a.has_passkey?'Enabled':'Not enabled'}</td><td><button className="text-button" onClick={()=>{select(a.id);setModal('edit')}}>Edit</button><button className="icon-button" aria-label={`Delete ${a.service_name}`} onClick={()=>setDeleting({kind:'accounts',id:a.id,name:a.service_name})}><Trash2 size={14}/></button></td></tr>)}</tbody></table>{!searchResults.length&&<p className="results-note">No accounts match your search.</p>}</div></section><section className="table-card"><div className="card-heading"><div><h2>Account connections</h2><p>The arrow points from the account granting access to the account at risk.</p></div><button className="secondary" disabled={accounts.length<2} onClick={()=>setModal('connect')}><Plus size={15}/> Add connection</button></div>{connections.map(c=><div className="connection-row" key={c.id}><strong>{name(c.source_account_id)}</strong><ArrowRight size={15}/><strong>{name(c.target_account_id)}</strong><span>{label(c.relationship_type)}</span><small>Weight {c.risk_weight}/10</small><button className="icon-button" aria-label={`Remove connection from ${name(c.source_account_id)} to ${name(c.target_account_id)}`} onClick={()=>setDeleting({kind:'relationships',id:c.id,name:`${name(c.source_account_id)} → ${name(c.target_account_id)}`})}><Trash2 size={14}/></button></div>)}{!connections.length&&<p className="results-note">No connections yet. Add one to start exploring your exposure.</p>}</section></>}
- {(view==='recommendations'||simulation)&&<section className="recommendation-section"><div className="section-title"><div><span className="eyebrow">YOUR NEXT BEST STEPS</span><h2>Top 3 ways to reduce your Blast Radius</h2><p>Prioritized for {account?.service_name}. Make changes in the real service, then update your map.</p></div>{view==='recommendations'&&<select aria-label="Account for recommendations" value={selected||''} onChange={e=>select(e.target.value)}>{accounts.map(a=><option key={a.id} value={a.id}>{a.service_name}</option>)}</select>}</div><div className="recommendation-grid">{(simulation?.recommendations||recs).map((r,i)=><article className="recommendation-card" key={r.kind+r.account_id+r.title}><span className="action-number">0{i+1}</span><h3>{r.title}</h3><p>{r.detail}</p><button className="text-button" onClick={()=>{select(r.account_id);setView(r.kind==='mfa'||r.kind==='passkey'?'overview':'accounts')}}>Review account <ArrowUpRight size={14}/></button></article>)}{!recs.length&&!simulation&&<p>No recommendations for this account’s current map.</p>}</div></section>}
- {cycles.length>0&&<section className="cycle-warning"><TriangleAlert size={19}/><div><strong>Circular recovery dependency detected</strong><p>{cycles.map(g=>g.map(name).join(' ↔ ')).join('; ')}. If one account is compromised or lost, recovery of both could become difficult. Set up an independent recovery method before breaking the loop.</p></div><button className="text-button" onClick={()=>setView('accounts')}>Review connections <ArrowRight size={14}/></button></section>}
- </>}
- <footer className="page-footer"><span><ShieldCheck size={13}/> BlastRadius never asks for or stores your account passwords.</span><span>Manually mapped. Privately stored.</span></footer></>}
- </main></div>
- {(modal==='add'||modal==='edit')&&<AccountForm account={modal==='edit'?account:undefined} onClose={()=>setModal(null)} onDone={saved}/>}{modal==='connect'&&<ConnectionForm accounts={accounts} selected={selected} onClose={()=>setModal(null)} onDone={saved}/>}
- {modal==='help'&&<Modal title="Understand your digital connections" onClose={()=>setModal(null)}><div className="help-copy"><p>1. Add the accounts you use. You only need the service name and basic security settings.</p><p>2. Add directed connections. Gmail → Amazon means Gmail could help someone access Amazon, for example through a password reset.</p><p>3. Select an account and simulate a compromise to see possible paths and practical security actions.</p><p>The score is an exposure-priority estimate, not the probability of being hacked. A score of zero means there are no other reachable accounts in your current map; it does not guarantee safety.</p><p>Demo sessions last 30 days. Data persists across reloads in the same browser. There is no email sign-in or cross-device recovery in this MVP.</p></div></Modal>}
- {deleting&&<Modal title="Remove from your map?" onClose={()=>setDeleting(null)}><p className="form-intro">Remove {deleting.name}? {deleting.kind==='accounts'?'Its connections will also be removed. ':''}This only changes your map, not the real service.</p><footer><button className="secondary" onClick={()=>setDeleting(null)}>Cancel</button><button className="danger" disabled={busy} onClick={()=>void action(async()=>{await api(`/${deleting.kind}/${deleting.id}`,'DELETE');setDeleting(null);await refresh();setNotice('Removed from your map.')})}>Remove</button></footer></Modal>}
- </div>
+"use client";
+import { useCallback, useEffect, useState } from "react";
+import {
+  Activity,
+  ArrowRight,
+  ArrowUpRight,
+  Check,
+  ChevronRight,
+  CircleHelp,
+  GitBranch,
+  LayoutDashboard,
+  Link2,
+  LockKeyhole,
+  Plus,
+  Radio,
+  RotateCcw,
+  Search,
+  Shield,
+  ShieldCheck,
+  ShieldAlert,
+  Sparkles,
+  Trash2,
+  TriangleAlert,
+  UserRound,
+  Waypoints,
+  X,
+} from "lucide-react";
+import IdentityMap from "@/components/IdentityMap";
+import { AccountForm, ConnectionForm, Modal } from "@/components/Forms";
+import {
+  api,
+  Account,
+  Connection,
+  Simulation,
+  Risk,
+  Choke,
+  Recommendation,
+  label,
+} from "@/lib/types";
+type View = "overview" | "accounts" | "recommendations";
+export default function Page() {
+  const [accounts, setAccounts] = useState<Account[]>([]),
+    [connections, setConnections] = useState<Connection[]>([]),
+    [risks, setRisks] = useState<Risk[]>([]),
+    [chokes, setChokes] = useState<Choke[]>([]),
+    [cycles, setCycles] = useState<string[][]>([]);
+  const [selected, setSelected] = useState<string | null>(null),
+    [simulation, setSimulation] = useState<Simulation | null>(null),
+    [recs, setRecs] = useState<Recommendation[]>([]),
+    [view, setView] = useState<View>("overview");
+  const [loading, setLoading] = useState(true),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState(""),
+    [notice, setNotice] = useState(""),
+    [query, setQuery] = useState("");
+  const [modal, setModal] = useState<
+      "add" | "edit" | "connect" | "help" | null
+    >(null),
+    [deleting, setDeleting] = useState<{
+      kind: "accounts" | "relationships";
+      id: string;
+      name: string;
+    } | null>(null);
+  const refresh = useCallback(async () => {
+    const [a, c, r, h, l] = await Promise.all([
+      api<Account[]>("/accounts"),
+      api<Connection[]>("/relationships"),
+      api<Risk[]>("/risk-scores"),
+      api<Choke[]>("/security-chokepoints"),
+      api<string[][]>("/circular-dependencies"),
+    ]);
+    setAccounts(a);
+    setConnections(c);
+    setRisks(r);
+    setChokes(h);
+    setCycles(l);
+    setSelected((prev) =>
+      a.some((x) => x.id === prev)
+        ? prev
+        : r[0]?.account_id || a[0]?.id || null,
+    );
+    setSimulation(null);
+  }, []);
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        await api("/auth/me");
+      } catch {
+        if (active) await api("/auth/demo", "POST");
+      }
+      if (active) await refresh();
+    })()
+      .catch((e) => {
+        if (active) setError(e.message);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [refresh]);
+  useEffect(() => {
+    let active = true;
+    setRecs([]);
+    if (selected)
+      api<Recommendation[]>(`/recommendations/${selected}`)
+        .then((r) => {
+          if (active) setRecs(r);
+        })
+        .catch((e) => {
+          if (active) setError(e.message);
+        });
+    return () => {
+      active = false;
+    };
+  }, [selected, accounts]);
+  const account = accounts.find((a) => a.id === selected),
+    risk = risks.find((r) => r.account_id === selected),
+    highest = accounts.find((a) => a.id === risks[0]?.account_id);
+  const name = (id: string) =>
+    accounts.find((a) => a.id === id)?.service_name || "Account";
+  const select = (id: string) => {
+    if (busy) return;
+    setSelected(id);
+    setSimulation(null);
+  };
+  async function action(fn: () => Promise<unknown>) {
+    setBusy(true);
+    setError("");
+    try {
+      await fn();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  const saved = () => {
+    setModal(null);
+    void action(async () => {
+      await refresh();
+      setNotice("Your map has been saved.");
+    });
+  };
+  async function simulate() {
+    if (!selected) return;
+    await action(async () => {
+      setSimulation(await api<Simulation>(`/simulate/${selected}`, "POST"));
+      setNotice("Simulation complete. Potential attack paths are highlighted.");
+    });
+  }
+  const searchResults = accounts.filter((a) =>
+    (a.service_name + " " + a.category + " " + a.email_or_username)
+      .toLowerCase()
+      .includes(query.toLowerCase()),
+  );
+  const nav = [
+    { id: "overview" as View, icon: LayoutDashboard, text: "Overview" },
+    { id: "accounts" as View, icon: Waypoints, text: "My accounts" },
+    {
+      id: "recommendations" as View,
+      icon: ShieldCheck,
+      text: "Security actions",
+    },
+  ];
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <a
+          href="#"
+          className="brand"
+          onClick={(e) => {
+            e.preventDefault();
+            setView("overview");
+          }}
+        >
+          <span className="brand-mark">
+            <Radio size={23} />
+          </span>
+          BlastRadius<span className="beta">BETA</span>
+        </a>
+        <div className="workspace">
+          <div className="avatar">A</div>
+          <div>
+            <strong>Personal workspace</strong>
+            <small>Private demo session</small>
+          </div>
+          <ChevronRight size={14} />
+        </div>
+        <p className="nav-label">WORKSPACE</p>
+        <nav>
+          {nav.map((n) => (
+            <button
+              key={n.id}
+              onClick={() => setView(n.id)}
+              className={view === n.id ? "active" : ""}
+            >
+              <n.icon size={18} />
+              {n.text}
+              {n.id === "accounts" && <span>{accounts.length}</span>}
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-bottom">
+          <div className="privacy-box">
+            <LockKeyhole size={18} />
+            <strong>Your privacy comes first</strong>
+            <p>BlastRadius never asks for or stores your account passwords.</p>
+          </div>
+          <button className="help-link" onClick={() => setModal("help")}>
+            <CircleHelp size={17} /> How BlastRadius works{" "}
+            <ArrowUpRight size={14} />
+          </button>
+          <div className="profile">
+            <div className="avatar">
+              <UserRound size={16} />
+            </div>
+            <div>
+              <strong>Your demo profile</strong>
+              <small>Saved in this browser session</small>
+            </div>
+            <span className="online-dot" />
+          </div>
+        </div>
+      </aside>
+      <div className="main-shell">
+        <header className="topbar">
+          <span>
+            Workspace <ChevronRight size={13} />{" "}
+            <strong>{nav.find((n) => n.id === view)?.text}</strong>
+          </span>
+          <div className="topbar-right">
+            <span className="private-label">
+              <LockKeyhole size={12} /> Private by design
+            </span>
+            <div className="avatar">A</div>
+          </div>
+        </header>
+        <main className="content">
+          <div className="heading">
+            <div>
+              <div className="eyebrow">
+                <span /> KNOW YOUR EXPOSURE
+              </div>
+              <h1>
+                {view === "overview"
+                  ? "Your digital life, connected."
+                  : view === "accounts"
+                    ? "Every account. One clear view."
+                    : "Small changes. Stronger security."}
+              </h1>
+              <p>
+                {view === "overview"
+                  ? "See how your accounts connect. Understand what’s at risk. Protect what matters."
+                  : view === "accounts"
+                    ? "Build your map with the accounts you use and the connections between them."
+                    : "Focus on the changes that can make the biggest difference."}
+              </p>
+            </div>
+            <button
+              className="primary"
+              onClick={() => setModal("add")}
+              disabled={loading || busy}
+            >
+              <Plus size={17} /> Add account
+            </button>
+          </div>
+          {error && (
+            <div className="error-banner" role="alert">
+              <TriangleAlert size={17} />
+              {error}
+              <button
+                onClick={() => {
+                  setError("");
+                  void action(refresh);
+                }}
+              >
+                Retry
+              </button>
+              <button aria-label="Dismiss error" onClick={() => setError("")}>
+                <X size={15} />
+              </button>
+            </div>
+          )}
+          {notice && (
+            <div className="notice" role="status">
+              <Check size={15} />
+              {notice}
+              <button
+                aria-label="Dismiss notification"
+                onClick={() => setNotice("")}
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
+          {loading ? (
+            <div className="loading">
+              <Radio className="pulse" size={32} /> Preparing your private
+              workspace…
+            </div>
+          ) : (
+            <>
+              <section className="stats" aria-label="Account summary">
+                <Stat
+                  title="Total accounts"
+                  value={accounts.length}
+                  icon={<Waypoints size={18} />}
+                  detail={`${connections.length} connections mapped`}
+                />
+                <Stat
+                  title="Critical accounts"
+                  value={
+                    accounts.filter((a) => a.importance === "Critical").length
+                  }
+                  icon={<Shield size={18} />}
+                  detail="Your most important accounts"
+                />
+                <Stat
+                  title="Without MFA"
+                  value={accounts.filter((a) => !a.has_mfa).length}
+                  icon={<ShieldAlert size={18} />}
+                  detail="Could use another layer of protection"
+                  accent
+                />
+                <Stat
+                  title="Highest blast radius"
+                  value={highest?.service_name || "—"}
+                  icon={<Activity size={18} />}
+                  detail={
+                    highest
+                      ? `${risks[0]?.score} / 100 · ${risks[0]?.level} exposure`
+                      : "Add accounts to see your exposure"
+                  }
+                />
+              </section>
+              {!accounts.length ? (
+                <section className="empty-card">
+                  <div className="empty-icon">
+                    <Waypoints size={40} />
+                  </div>
+                  <span className="eyebrow">YOUR MAP STARTS HERE</span>
+                  <h2>One account can open many doors.</h2>
+                  <p>
+                    Connect your accounts to find out which ones matter most.
+                    <br />
+                    Try a fictional 10-account profile, or build your own.
+                  </p>
+                  <div className="button-row">
+                    <button
+                      className="primary"
+                      disabled={busy}
+                      onClick={() =>
+                        void action(async () => {
+                          await api("/demo/load", "POST");
+                          await refresh();
+                          setNotice(
+                            "Demo loaded: 10 accounts and 12 connections. Select Gmail to simulate a compromise.",
+                          );
+                        })
+                      }
+                    >
+                      <Sparkles size={17} />
+                      {busy ? "Loading…" : "Explore demo profile"}
+                    </button>
+                    <button
+                      className="secondary"
+                      onClick={() => setModal("add")}
+                    >
+                      Add my first account <ArrowRight size={15} />
+                    </button>
+                  </div>
+                  <small>
+                    No scans. No passwords. Just the connections you choose to
+                    add.
+                  </small>
+                </section>
+              ) : (
+                <>
+                  {view === "overview" && (
+                    <>
+                      <section className="map-layout">
+                        <div className="map-card">
+                          <div className="card-heading">
+                            <div>
+                              <h2>
+                                <Waypoints size={18} /> Your account map{" "}
+                                <span className="count-chip">
+                                  {accounts.length} accounts
+                                </span>
+                              </h2>
+                              <p>
+                                {simulation
+                                  ? `Showing potential exposure from ${name(simulation.source_account_id)}`
+                                  : "A clear picture of your digital dependencies"}
+                              </p>
+                            </div>
+                            <button
+                              className="secondary compact"
+                              disabled={busy || accounts.length < 2}
+                              onClick={() => setModal("connect")}
+                            >
+                              <Link2 size={14} /> Add connection
+                            </button>
+                          </div>
+                          <div className="map-toolbar">
+                            <span
+                              className={
+                                simulation ? "simulation-pill" : "live-pill"
+                              }
+                            >
+                              <span />
+                              {simulation
+                                ? "Simulation active"
+                                : "Live account map"}
+                            </span>
+                            {simulation ? (
+                              <button
+                                className="text-button"
+                                onClick={() => setSimulation(null)}
+                              >
+                                <RotateCcw size={12} /> Reset view
+                              </button>
+                            ) : (
+                              <span className="map-hint">
+                                Select an account to explore its impact
+                              </span>
+                            )}
+                          </div>
+                          <div className="graph">
+                            <IdentityMap
+                              accounts={accounts}
+                              connections={connections}
+                              selected={selected}
+                              onSelect={select}
+                              simulation={simulation}
+                            />
+                          </div>
+                          <div className="map-legend">
+                            {simulation ? (
+                              <>
+                                <span>
+                                  <i className="dot-red" />
+                                  Starting account
+                                </span>
+                                <span>
+                                  <i className="dot-orange" />
+                                  Potentially affected
+                                </span>
+                                <span>
+                                  <i />
+                                  Unaffected
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                <span>
+                                  <i className="dot-green" />
+                                  MFA or passkey enabled
+                                </span>
+                                <span>
+                                  <i className="dot-orange" />
+                                  No MFA
+                                </span>
+                                <span>
+                                  <ArrowRight size={12} /> Direction of access
+                                </span>
+                              </>
+                            )}
+                            <span className="drag-hint">
+                              Drag to move · Scroll to zoom
+                            </span>
+                          </div>
+                        </div>
+                        <aside className="detail-card">
+                          {account && (
+                            <>
+                              <div className="detail-top">
+                                <span className="section-kicker">
+                                  ACCOUNT DETAILS
+                                </span>
+                                <button
+                                  className="text-button"
+                                  onClick={() => setModal("edit")}
+                                >
+                                  Edit
+                                </button>
+                              </div>
+                              <div className="account-title">
+                                <div
+                                  className={
+                                    "service-icon large c-" +
+                                    account.category
+                                      .replaceAll(" ", "-")
+                                      .toLowerCase()
+                                  }
+                                >
+                                  {account.service_name[0]}
+                                </div>
+                                <div>
+                                  <h2>{account.service_name}</h2>
+                                  <p>
+                                    {account.email_or_username ||
+                                      account.category}
+                                  </p>
+                                </div>
+                              </div>
+                              <span className="category-chip">
+                                {account.category}
+                              </span>
+                              <dl className="detail-list">
+                                <div>
+                                  <dt>Importance</dt>
+                                  <dd
+                                    className={
+                                      account.importance === "Critical"
+                                        ? "orange-text"
+                                        : ""
+                                    }
+                                  >
+                                    {account.importance}
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt>Two-factor authentication</dt>
+                                  <dd
+                                    className={
+                                      account.has_mfa
+                                        ? "green-text"
+                                        : "orange-text"
+                                    }
+                                  >
+                                    {account.has_mfa
+                                      ? "Enabled"
+                                      : "Not enabled"}
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt>Passkey</dt>
+                                  <dd
+                                    className={
+                                      account.has_passkey ? "green-text" : ""
+                                    }
+                                  >
+                                    {account.has_passkey
+                                      ? "Enabled"
+                                      : "Not enabled"}
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt>Dependent accounts</dt>
+                                  <dd>
+                                    {risk?.dependent_accounts || 0} accounts
+                                  </dd>
+                                </div>
+                              </dl>
+                              <div className="score-box">
+                                <div>
+                                  <span>Blast Radius Score</span>
+                                  <span
+                                    className={
+                                      "risk-badge " +
+                                      (risk?.level || "Low").toLowerCase()
+                                    }
+                                  >
+                                    {risk?.level || "Low"}
+                                  </span>
+                                </div>
+                                <strong>
+                                  {risk?.score || 0}
+                                  <small>/ 100</small>
+                                </strong>
+                                <div className="score-track">
+                                  <i
+                                    style={{ width: `${risk?.score || 0}%` }}
+                                  />
+                                </div>
+                                <p>
+                                  Potential exposure if this account is
+                                  compromised.
+                                </p>
+                              </div>
+                              <button
+                                className="simulate"
+                                disabled={busy}
+                                onClick={simulate}
+                              >
+                                <Radio size={17} />
+                                {busy ? "Calculating…" : "Simulate Compromise"}
+                                <ArrowRight size={15} />
+                              </button>
+                              <p className="safe-note">
+                                <ShieldCheck size={12} /> A safe simulation. No
+                                accounts are accessed.
+                              </p>
+                              {(account.recovery_email ||
+                                account.recovery_phone) && (
+                                <p className="recovery-note">
+                                  Recovery: {account.recovery_email}{" "}
+                                  {account.recovery_phone}
+                                </p>
+                              )}
+                              <button
+                                className="delete-link"
+                                onClick={() =>
+                                  setDeleting({
+                                    kind: "accounts",
+                                    id: account.id,
+                                    name: account.service_name,
+                                  })
+                                }
+                              >
+                                <Trash2 size={12} /> Remove account
+                              </button>
+                            </>
+                          )}
+                        </aside>
+                      </section>
+                      {simulation && (
+                        <section className="simulation-results">
+                          <div className="card-heading">
+                            <div>
+                              <h2>
+                                <Radio size={18} /> If{" "}
+                                {name(simulation.source_account_id)} is
+                                compromised
+                              </h2>
+                              <p>
+                                {simulation.affected_count} other accounts
+                                potentially affected ·{" "}
+                                {simulation.high_value_count} high-value
+                                accounts ·{" "}
+                                {simulation.directly_reachable.length} direct,{" "}
+                                {simulation.indirectly_reachable.length}{" "}
+                                indirect
+                              </p>
+                            </div>
+                            <span
+                              className={
+                                "risk-badge " + simulation.level.toLowerCase()
+                              }
+                            >
+                              {simulation.score}/100 · {simulation.level}
+                            </span>
+                          </div>
+                          <p className="results-note">
+                            These are possible paths based on your map, not
+                            confirmed vulnerabilities. MFA and passkeys lower
+                            risk but do not erase recovery paths.
+                          </p>
+                          <div className="attack-paths">
+                            {simulation.paths.length ? (
+                              simulation.paths.map((p) => (
+                                <div
+                                  className="attack-path"
+                                  key={p.target_account_id}
+                                >
+                                  <div>
+                                    <strong>{name(p.target_account_id)}</strong>
+                                    <span className="category-chip">
+                                      {p.direct
+                                        ? "Direct access"
+                                        : "Indirect access"}
+                                    </span>
+                                  </div>
+                                  <p>
+                                    {p.account_ids.map((id, i) => (
+                                      <span key={id}>
+                                        {i > 0 && <ArrowRight size={12} />}{" "}
+                                        {name(id)}{" "}
+                                      </span>
+                                    ))}
+                                  </p>
+                                  <small>
+                                    {p.relationship_types
+                                      .map(label)
+                                      .join(" → ")}
+                                  </small>
+                                </div>
+                              ))
+                            ) : (
+                              <p>
+                                No other accounts are reachable from this
+                                account in your current map.
+                              </p>
+                            )}
+                          </div>
+                        </section>
+                      )}
+                      <section className="lower-grid">
+                        <div className="risk-card">
+                          <div className="card-heading">
+                            <div>
+                              <h2>Your highest risk accounts</h2>
+                              <p>
+                                The accounts with the greatest potential impact
+                              </p>
+                            </div>
+                            <span className="section-kicker">EXPOSURE</span>
+                          </div>
+                          {risks.slice(0, 4).map((r, i) => (
+                            <button
+                              className="risk-row"
+                              key={r.account_id}
+                              onClick={() => select(r.account_id)}
+                            >
+                              <span className="rank">0{i + 1}</span>
+                              <div className="service-icon small">
+                                {name(r.account_id)[0]}
+                              </div>
+                              <div className="risk-name">
+                                <strong>{name(r.account_id)}</strong>
+                                <small>
+                                  {r.dependent_accounts} dependent accounts
+                                </small>
+                              </div>
+                              <span className="mini-track">
+                                <i style={{ width: `${r.score}%` }} />
+                              </span>
+                              <strong>{r.score}</strong>
+                              <span
+                                className={
+                                  "risk-badge " + r.level.toLowerCase()
+                                }
+                              >
+                                {r.level}
+                              </span>
+                              <ChevronRight size={14} />
+                            </button>
+                          ))}
+                        </div>
+                        <div className="insight-card">
+                          <div className="insight-icon">
+                            <GitBranch size={22} />
+                          </div>
+                          <span className="section-kicker">
+                            YOUR SECURITY CHOKE POINT
+                          </span>
+                          <h2>
+                            {chokes[0]
+                              ? `${name(chokes[0].account_id)} holds a lot of keys.`
+                              : "Every connection tells a story."}
+                          </h2>
+                          <p>
+                            {chokes[0] ? (
+                              <>
+                                Your {name(chokes[0].account_id)} account
+                                influences{" "}
+                                <strong>
+                                  {chokes[0].dependent_accounts} other accounts.
+                                </strong>{" "}
+                                Protecting it is one of the most useful places
+                                to start.
+                              </>
+                            ) : (
+                              "Keep adding connections to find the accounts that influence the rest of your digital life."
+                            )}
+                          </p>
+                          <button
+                            className="text-button"
+                            onClick={() => {
+                              if (chokes[0]) select(chokes[0].account_id);
+                              setView("recommendations");
+                            }}
+                          >
+                            See recommended actions <ArrowRight size={14} />
+                          </button>
+                        </div>
+                      </section>
+                    </>
+                  )}
+                  {view === "accounts" && (
+                    <>
+                      <section className="table-card">
+                        <div className="card-heading">
+                          <div>
+                            <h2>Your accounts</h2>
+                            <p>Only metadata. Never passwords.</p>
+                          </div>
+                          <label className="search">
+                            <Search size={15} />
+                            <input
+                              aria-label="Search accounts"
+                              placeholder="Search accounts…"
+                              value={query}
+                              onChange={(e) => setQuery(e.target.value)}
+                            />
+                          </label>
+                        </div>
+                        <div className="table-scroll">
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>Account</th>
+                                <th>Category</th>
+                                <th>Importance</th>
+                                <th>MFA</th>
+                                <th>Passkey</th>
+                                <th>Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {searchResults.map((a) => (
+                                <tr key={a.id}>
+                                  <td>
+                                    <strong>{a.service_name}</strong>
+                                    <small>{a.email_or_username}</small>
+                                  </td>
+                                  <td>{a.category}</td>
+                                  <td>{a.importance}</td>
+                                  <td>
+                                    {a.has_mfa ? "Enabled" : "Not enabled"}
+                                  </td>
+                                  <td>
+                                    {a.has_passkey ? "Enabled" : "Not enabled"}
+                                  </td>
+                                  <td>
+                                    <button
+                                      className="text-button"
+                                      onClick={() => {
+                                        select(a.id);
+                                        setModal("edit");
+                                      }}
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      className="icon-button"
+                                      aria-label={`Delete ${a.service_name}`}
+                                      onClick={() =>
+                                        setDeleting({
+                                          kind: "accounts",
+                                          id: a.id,
+                                          name: a.service_name,
+                                        })
+                                      }
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {!searchResults.length && (
+                            <p className="results-note">
+                              No accounts match your search.
+                            </p>
+                          )}
+                        </div>
+                      </section>
+                      <section className="table-card">
+                        <div className="card-heading">
+                          <div>
+                            <h2>Account connections</h2>
+                            <p>
+                              The arrow points from the account granting access
+                              to the account at risk.
+                            </p>
+                          </div>
+                          <button
+                            className="secondary"
+                            disabled={accounts.length < 2}
+                            onClick={() => setModal("connect")}
+                          >
+                            <Plus size={15} /> Add connection
+                          </button>
+                        </div>
+                        {connections.map((c) => (
+                          <div className="connection-row" key={c.id}>
+                            <strong>{name(c.source_account_id)}</strong>
+                            <ArrowRight size={15} />
+                            <strong>{name(c.target_account_id)}</strong>
+                            <span>{label(c.relationship_type)}</span>
+                            <small>Weight {c.risk_weight}/10</small>
+                            <button
+                              className="icon-button"
+                              aria-label={`Remove connection from ${name(c.source_account_id)} to ${name(c.target_account_id)}`}
+                              onClick={() =>
+                                setDeleting({
+                                  kind: "relationships",
+                                  id: c.id,
+                                  name: `${name(c.source_account_id)} → ${name(c.target_account_id)}`,
+                                })
+                              }
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ))}
+                        {!connections.length && (
+                          <p className="results-note">
+                            No connections yet. Add one to start exploring your
+                            exposure.
+                          </p>
+                        )}
+                      </section>
+                    </>
+                  )}
+                  {(view === "recommendations" || simulation) && (
+                    <section className="recommendation-section">
+                      <div className="section-title">
+                        <div>
+                          <span className="eyebrow">YOUR NEXT BEST STEPS</span>
+                          <h2>Top 3 ways to reduce your Blast Radius</h2>
+                          <p>
+                            Prioritized for {account?.service_name}. Make
+                            changes in the real service, then update your map.
+                          </p>
+                        </div>
+                        {view === "recommendations" && (
+                          <select
+                            aria-label="Account for recommendations"
+                            value={selected || ""}
+                            onChange={(e) => select(e.target.value)}
+                          >
+                            {accounts.map((a) => (
+                              <option key={a.id} value={a.id}>
+                                {a.service_name}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                      <div className="recommendation-grid">
+                        {(simulation?.recommendations || recs).map((r, i) => (
+                          <article
+                            className="recommendation-card"
+                            key={r.kind + r.account_id + r.title}
+                          >
+                            <span className="action-number">0{i + 1}</span>
+                            <h3>{r.title}</h3>
+                            <p>{r.detail}</p>
+                            <button
+                              className="text-button"
+                              onClick={() => {
+                                select(r.account_id);
+                                setView(
+                                  r.kind === "mfa" || r.kind === "passkey"
+                                    ? "overview"
+                                    : "accounts",
+                                );
+                              }}
+                            >
+                              Review account <ArrowUpRight size={14} />
+                            </button>
+                          </article>
+                        ))}
+                        {!recs.length && !simulation && (
+                          <p>
+                            No recommendations for this account’s current map.
+                          </p>
+                        )}
+                      </div>
+                    </section>
+                  )}
+                  {cycles.length > 0 && (
+                    <section className="cycle-warning">
+                      <TriangleAlert size={19} />
+                      <div>
+                        <strong>Circular recovery dependency detected</strong>
+                        <p>
+                          {cycles
+                            .map((g) => g.map(name).join(" ↔ "))
+                            .join("; ")}
+                          . If one account is compromised or lost, recovery of
+                          both could become difficult. Set up an independent
+                          recovery method before breaking the loop.
+                        </p>
+                      </div>
+                      <button
+                        className="text-button"
+                        onClick={() => setView("accounts")}
+                      >
+                        Review connections <ArrowRight size={14} />
+                      </button>
+                    </section>
+                  )}
+                </>
+              )}
+              <footer className="page-footer">
+                <span>
+                  <ShieldCheck size={13} /> BlastRadius never asks for or stores
+                  your account passwords.
+                </span>
+                <span>Manually mapped. Privately stored.</span>
+              </footer>
+            </>
+          )}
+        </main>
+      </div>
+      {(modal === "add" || modal === "edit") && (
+        <AccountForm
+          account={modal === "edit" ? account : undefined}
+          onClose={() => setModal(null)}
+          onDone={saved}
+        />
+      )}
+      {modal === "connect" && (
+        <ConnectionForm
+          accounts={accounts}
+          selected={selected}
+          onClose={() => setModal(null)}
+          onDone={saved}
+        />
+      )}
+      {modal === "help" && (
+        <Modal
+          title="Understand your digital connections"
+          onClose={() => setModal(null)}
+        >
+          <div className="help-copy">
+            <p>
+              1. Add the accounts you use. You only need the service name and
+              basic security settings.
+            </p>
+            <p>
+              2. Add directed connections. Gmail → Amazon means Gmail could help
+              someone access Amazon, for example through a password reset.
+            </p>
+            <p>
+              3. Select an account and simulate a compromise to see possible
+              paths and practical security actions.
+            </p>
+            <p>
+              The score is an exposure-priority estimate, not the probability of
+              being hacked. A score of zero means there are no other reachable
+              accounts in your current map; it does not guarantee safety.
+            </p>
+            <p>
+              Demo sessions last 30 days. Data persists across reloads in the
+              same browser. There is no email sign-in or cross-device recovery
+              in this MVP.
+            </p>
+          </div>
+        </Modal>
+      )}
+      {deleting && (
+        <Modal title="Remove from your map?" onClose={() => setDeleting(null)}>
+          <p className="form-intro">
+            Remove {deleting.name}?{" "}
+            {deleting.kind === "accounts"
+              ? "Its connections will also be removed. "
+              : ""}
+            This only changes your map, not the real service.
+          </p>
+          <footer>
+            <button className="secondary" onClick={() => setDeleting(null)}>
+              Cancel
+            </button>
+            <button
+              className="danger"
+              disabled={busy}
+              onClick={() =>
+                void action(async () => {
+                  await api(`/${deleting.kind}/${deleting.id}`, "DELETE");
+                  setDeleting(null);
+                  await refresh();
+                  setNotice("Removed from your map.");
+                })
+              }
+            >
+              Remove
+            </button>
+          </footer>
+        </Modal>
+      )}
+    </div>
+  );
 }
-function Stat({title,value,icon,detail,accent=false}:{title:string;value:string|number;icon:React.ReactNode;detail:string;accent?:boolean}){return <article className={'stat-card '+(accent?'accent':'')}><div><span>{title}</span>{icon}</div><strong>{value}</strong><small>{accent&&<span className="tiny-dot"/>}{detail}</small></article>}
+function Stat({
+  title,
+  value,
+  icon,
+  detail,
+  accent = false,
+}: {
+  title: string;
+  value: string | number;
+  icon: React.ReactNode;
+  detail: string;
+  accent?: boolean;
+}) {
+  return (
+    <article className={"stat-card " + (accent ? "accent" : "")}>
+      <div>
+        <span>{title}</span>
+        {icon}
+      </div>
+      <strong>{value}</strong>
+      <small>
+        {accent && <span className="tiny-dot" />}
+        {detail}
+      </small>
+    </article>
+  );
+}

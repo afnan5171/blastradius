@@ -11,4 +11,8 @@ Each phase receives a commit and the available checks. Docker requires a running
 - [x] 7. Recommendations and choke points
 - [x] 8. Demo profile
 - [x] 9. Design and accessibility
-- [ ] 10. Tests and documentation
+- [x] 10. Tests and documentation
+
+## Final verification
+
+15 backend tests, 4 frontend tests, Next.js production build, production HTTP smoke, and Docker Compose configuration validation passed. Browser simulation, editing, and reload persistence verified. Docker/PostgreSQL runtime remains unverified because the Docker daemon was stopped; see VALIDATION.md.
