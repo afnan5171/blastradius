@@ -3,7 +3,7 @@
 Each phase receives a commit and the available checks. Docker requires a running daemon; local Python/Node checks substitute when unavailable.
 
 - [x] 1. Repository, backend, frontend, database, Docker
-- [ ] 2. Account and relationship CRUD
+- [x] 2. Account and relationship CRUD
 - [ ] 3. NetworkX graph engine
 - [ ] 4. React Flow visualization
 - [ ] 5. Compromise simulation
