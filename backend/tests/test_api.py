@@ -34,3 +34,16 @@ def test_simulation(client):
     assert result['paths'][0]['relationship_types']==['PASSWORD_RESET']
     client.cookies.clear();client.post('/auth/demo')
     assert client.post('/simulate/'+a['id']).status_code==404
+def test_demo_and_analysis(client):
+    assert client.post('/demo/load').json()['accounts']==10
+    assert client.post('/demo/load').status_code==409
+    accounts=client.get('/accounts').json()
+    assert len(accounts)==10
+    gmail=next(a for a in accounts if a['service_name']=='Gmail')
+    result=client.post('/simulate/'+gmail['id']).json()
+    assert result['affected_count']==9 and len(result['recommendations'])==3
+    assert result['score']>0
+    assert client.get('/security-chokepoints').json()[0]['dependent_accounts']==9
+    assert len(client.get('/circular-dependencies').json())==1
+    assert len(client.get('/risk-scores').json())==10
+    assert client.get('/recommendations/'+gmail['id']).json()==result['recommendations']

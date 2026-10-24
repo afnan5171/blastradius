@@ -25,3 +25,5 @@ app.include_router(auth_router)
 app.include_router(router)
 from .analysis_routes import router as analysis_router
 app.include_router(analysis_router)
+from .demo import router as demo_router
+app.include_router(demo_router)

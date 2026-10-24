@@ -9,6 +9,6 @@ Each phase receives a commit and the available checks. Docker requires a running
 - [x] 5. Compromise simulation
 - [x] 6. Blast Radius scoring
 - [x] 7. Recommendations and choke points
-- [ ] 8. Demo profile
+- [x] 8. Demo profile
 - [ ] 9. Design and accessibility
 - [ ] 10. Tests and documentation
