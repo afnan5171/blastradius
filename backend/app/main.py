@@ -23,3 +23,5 @@ async def browser_safety(request: Request, call_next):
 def health(): return {"status":"ok"}
 app.include_router(auth_router)
 app.include_router(router)
+from .analysis_routes import router as analysis_router
+app.include_router(analysis_router)

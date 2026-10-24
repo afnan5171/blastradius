@@ -26,3 +26,11 @@ def test_validation(client):
     a=add(client)
     assert client.post('/relationships',json={"source_account_id":a['id'],"target_account_id":a['id'],"relationship_type":"OTHER"}).status_code==422
     assert client.post('/auth/demo',headers={"Sec-Fetch-Site":"cross-site"}).status_code==403
+def test_simulation(client):
+    a=add(client); b=add(client,'PayPal')
+    client.post('/relationships',json={"source_account_id":a['id'],"target_account_id":b['id'],"relationship_type":"PASSWORD_RESET"})
+    result=client.post('/simulate/'+a['id']).json()
+    assert result['affected_count']==1
+    assert result['paths'][0]['relationship_types']==['PASSWORD_RESET']
+    client.cookies.clear();client.post('/auth/demo')
+    assert client.post('/simulate/'+a['id']).status_code==404
