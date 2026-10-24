@@ -85,3 +85,34 @@ def calculate_account_risk_scores(graph):
         score=calculate_blast_radius_score(graph,n)
         result.append({'account_id':n,'score':score,'level':risk_level(score),'dependent_accounts':len(nx.descendants(graph,n))})
     return sorted(result,key=lambda r:(-r['score'],r['account_id']))
+
+def generate_recommendations(graph, source):
+    relevant={source,*nx.descendants(graph,source)}
+    candidates=[]
+    def add(kind,account_id,title,detail,priority):
+        candidates.append(dict(kind=kind,account_id=account_id,title=title,detail=detail,priority=priority))
+    for n in sorted(relevant):
+        a=graph.nodes[n]['account']; reach=len(nx.descendants(graph,n)); importance=IMPORTANCE[a.importance]
+        if not a.has_passkey:
+            add('passkey',n,f'Enable a passkey on {a.service_name}',f'Adds strong sign-in protection to an account that influences {reach} other accounts. Existing recovery paths still need review.',50+reach*4+importance)
+        if not a.has_mfa:
+            add('mfa',n,f'Enable MFA on {a.service_name}',f'Adds a second sign-in check'+(' to protect financial access.' if a.category=='Financial' else f' for this {a.importance.lower()}-importance account.'),45+reach*2+importance+(15 if a.category=='Financial' else 0))
+        recovery={u for u,_,d in graph.in_edges(n,data=True) if d['relationship_type'] in {'PASSWORD_RESET','RECOVERY_EMAIL','PHONE_RECOVERY'}}
+        if len(recovery)==1 and a.importance in {'High','Critical'}:
+            parent=next(iter(recovery));p=graph.nodes[parent]['account']
+            add('single_recovery',n,f'Review recovery for {a.service_name}',f'{p.service_name} is its only mapped recovery account. Add an independent recovery option and protect both accounts.',70+importance)
+        for u,_,d in graph.in_edges(n,data=True):
+            parent=graph.nodes[u]['account']
+            if d['relationship_type']=='SHARED_PASSWORD':
+                add('shared_password',n,f'Use unique passwords for {parent.service_name} and {a.service_name}','Replace the reused passwords directly in those services, then remove this connection from your map.',90)
+            if d['relationship_type'] in {'OAUTH_WRITE_ACCESS','OAUTH_READ_ACCESS'}:
+                add('oauth',n,f'Review {parent.service_name} access to {a.service_name}','Remove unnecessary connected-app permissions in the service, then update this map.',55+d['risk_weight'])
+            if a.importance=='Critical' and not parent.has_mfa and not parent.has_passkey:
+                add('weak_dependency',u,f'Protect {parent.service_name} to safeguard {a.service_name}','A critical account depends on an account without MFA or a passkey. Strengthen that account or separate this dependency.',80)
+    for group in find_circular_dependencies(graph):
+        if relevant.intersection(group):
+            names=' and '.join(graph.nodes[n]['account'].service_name for n in group)
+            add('recovery_loop',group[0],'Break a circular recovery dependency',f'{names} are in a recovery loop. Set up an independent recovery method before removing a dependency.',95)
+    # Stable rank, deduplicate identical advice; return the three highest priorities.
+    unique={(r['kind'],r['account_id'],r['title']):r for r in candidates}
+    return sorted(unique.values(),key=lambda r:(-r['priority'],r['title'],r['account_id']))[:3]

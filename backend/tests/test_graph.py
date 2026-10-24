@@ -36,3 +36,12 @@ def test_destination_protection_and_weights():
     g['a']['b']['r']['risk_weight']=1
     assert calculate_blast_radius_score(g,'a')<base
     assert [risk_level(v) for v in [20,21,40,41,60,61,80,81]]==['Low','Moderate','Moderate','Elevated','Elevated','High','High','Critical']
+def test_recommendations():
+    g=sample();recs=generate_recommendations(g,'a')
+    assert len(recs)==3 and recs==generate_recommendations(g,'a')
+    assert any(r['kind']=='single_recovery' for r in recs)
+    g.add_edge('b','a',id='back',relationship_type='RECOVERY_EMAIL',risk_weight=9)
+    assert generate_recommendations(g,'a')[0]['kind']=='recovery_loop'
+def test_shared_password_recommendation():
+    g=build_graph([account(x) for x in 'ab'],[relation('a','b',type='SHARED_PASSWORD')])
+    assert generate_recommendations(g,'a')[0]['kind']=='shared_password'
