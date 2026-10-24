@@ -44,3 +44,44 @@ def find_security_chokepoints(graph):
                'out_degree': len(set(graph.successors(n))), 'centrality': round(centrality[n],3)} for n in graph]
     return sorted([r for r in result if r['dependent_accounts'] >= 2],
                   key=lambda r: (-r['dependent_accounts'],-r['centrality'],r['account_id']))
+
+IMPORTANCE = {'Low':1, 'Medium':2, 'High':3, 'Critical':4}
+CATEGORY = {'Financial':1.5, 'Cloud Storage':1.25, 'Password Manager':1.75}
+def protection(account):
+    return (0.75 if account.has_mfa else 1.0) * (0.5 if account.has_passkey else 1.0)
+def risk_level(score):
+    return 'Low' if score<=20 else 'Moderate' if score<=40 else 'Elevated' if score<=60 else 'High' if score<=80 else 'Critical'
+def calculate_blast_radius_score(graph, source):
+    """Heuristic exposure-priority score, NOT a breach probability.
+
+    For each reachable destination: importance(1..4) * sensitive-category multiplier
+    * destination protection * strongest edge product over ANY simple path.
+    Compute strongest products via Dijkstra on -log(weight/10) costs.
+    Map total impact to 0..85 with 85*(1-exp(-impact/14)), then add up to 15
+    for source out-degree centrality. Apply source protection, round and clamp.
+    MFA multiplies by .75; passkeys by .5. Both multiply together.
+    The starting account is excluded from affected counts. Protection changes
+    priority, never removes a possible path. Other path intermediates do not
+    reduce risk in this deliberately conservative V1 model.
+    """
+    import math
+    paths=calculate_shortest_attack_paths(graph,source)
+    if not paths: return 0
+    weighted=nx.DiGraph()
+    weighted.add_nodes_from(graph.nodes)
+    for u,v,d in graph.edges(data=True):
+        cost=-math.log(d['risk_weight']/10)
+        if not weighted.has_edge(u,v) or cost<weighted[u][v]['cost']:
+            weighted.add_edge(u,v,cost=cost)
+    distances=nx.single_source_dijkstra_path_length(weighted,source,weight='cost')
+    impact=sum(IMPORTANCE[graph.nodes[n]['account'].importance]*CATEGORY.get(graph.nodes[n]['account'].category,1)
+               *protection(graph.nodes[n]['account'])*math.exp(-distances[n]) for n in distances if n!=source)
+    centrality=len(set(graph.successors(source)))/max(1,len(graph)-1)
+    score=(85*(1-math.exp(-impact/14))+15*centrality)*protection(graph.nodes[source]['account'])
+    return max(0,min(100,round(score)))
+def calculate_account_risk_scores(graph):
+    result=[]
+    for n in graph:
+        score=calculate_blast_radius_score(graph,n)
+        result.append({'account_id':n,'score':score,'level':risk_level(score),'dependent_accounts':len(nx.descendants(graph,n))})
+    return sorted(result,key=lambda r:(-r['score'],r['account_id']))

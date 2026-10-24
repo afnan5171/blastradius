@@ -20,3 +20,19 @@ def test_cycles_and_chokepoints():
     assert find_circular_dependencies(g)==[['a','b']]
     assert find_security_chokepoints(g)[0]['dependent_accounts']==2
     assert find_circular_dependencies(sample())==[]
+def test_scoring_and_protection():
+    g=sample();base=calculate_blast_radius_score(g,'a')
+    assert 0<base<=100
+    g.nodes['a']['account'].has_mfa=True
+    mfa=calculate_blast_radius_score(g,'a');assert mfa<base
+    g.nodes['a']['account'].has_passkey=True
+    assert calculate_blast_radius_score(g,'a')<mfa
+    assert calculate_blast_radius_score(g,'d')==0
+    assert calculate_account_risk_scores(g)[0]['score']>=calculate_account_risk_scores(g)[-1]['score']
+def test_destination_protection_and_weights():
+    g=sample();base=calculate_blast_radius_score(g,'a')
+    g.nodes['b']['account'].has_passkey=True
+    assert calculate_blast_radius_score(g,'a')<base
+    g['a']['b']['r']['risk_weight']=1
+    assert calculate_blast_radius_score(g,'a')<base
+    assert [risk_level(v) for v in [20,21,40,41,60,61,80,81]]==['Low','Moderate','Moderate','Elevated','Elevated','High','High','Critical']

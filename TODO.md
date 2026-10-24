@@ -7,7 +7,7 @@ Each phase receives a commit and the available checks. Docker requires a running
 - [x] 3. NetworkX graph engine
 - [x] 4. React Flow visualization
 - [x] 5. Compromise simulation
-- [ ] 6. Blast Radius scoring
+- [x] 6. Blast Radius scoring
 - [ ] 7. Recommendations and choke points
 - [ ] 8. Demo profile
 - [ ] 9. Design and accessibility
